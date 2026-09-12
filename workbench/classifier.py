@@ -120,6 +120,29 @@ def _chat_complete(client: Any, model: str, messages: list[dict[str, str]], temp
     return content.strip()
 
 
+def require_openai_credentials() -> tuple[str, str, str]:
+    """Return (api_key, organization, project) or raise a clear setup error."""
+    settings = get_settings()
+    api_key = settings.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+    organization = settings.openai_org or os.environ.get("OPENAI_ORG", "")
+    project = settings.openai_project or os.environ.get("OPENAI_PROJECT", "")
+    missing = [
+        name
+        for name, value in (
+            ("OPENAI_API_KEY", api_key),
+            ("OPENAI_ORG", organization),
+            ("OPENAI_PROJECT", project),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            "OpenAI client requires OPENAI_API_KEY, OPENAI_ORG, and OPENAI_PROJECT. "
+            f"Missing: {', '.join(missing)}. Copy .env.example to .env and fill all three."
+        )
+    return api_key, organization, project
+
+
 def openai_classify(
     text: str,
     *,
@@ -130,13 +153,11 @@ def openai_classify(
 ) -> tuple[str, str]:
     """Return (predicted_label, model_id_used)."""
     settings = get_settings()
-    api_key = settings.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not set. Add it to your .env file.")
+    api_key, organization, project = require_openai_credentials()
 
     from openai import OpenAI
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, organization=organization, project=project)
     template = PROMPT_VARIANTS.get(prompt_variant, CONCISE_SYSTEM)
     messages = [
         {"role": "system", "content": template.format(labels=", ".join(labels))},
