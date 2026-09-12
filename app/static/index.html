@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Workbench · MLflow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,520;9..144,640&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="mark" aria-hidden="true"></span>
+          <div>
+            <p class="eyebrow">MLflow AI Platform</p>
+            <h1>AI Workbench</h1>
+          </div>
+        </div>
+        <div class="status-cluster">
+          <span id="mlflow-pill" class="pill warn">MLflow · checking</span>
+          <span id="openai-pill" class="pill">OpenAI · —</span>
+          <a id="mlflow-link" class="ghost" href="http://127.0.0.1:5000" target="_blank" rel="noreferrer">
+            Open MLflow UI ↗
+          </a>
+        </div>
+      </header>
+
+      <aside class="rail">
+        <p class="rail-label">Lifecycle</p>
+        <nav id="steps" class="steps"></nav>
+        <div class="rail-note">
+          <p>Custom UI orchestrates the path. MLflow keeps the system of record for runs, artifacts, and the registry.</p>
+        </div>
+      </aside>
+
+      <main class="stage">
+        <section id="panel-experiment" class="panel active">
+          <header class="panel-head">
+            <p class="kicker">01 · Experiment</p>
+            <h2>Create or select an experiment</h2>
+            <p class="lede">
+              Training and evaluation runs live in one MLflow Tracking experiment. Production is later a
+              <em>registry alias</em> on this same MLflow instance — not a second experiment.
+            </p>
+          </header>
+          <div class="grid two">
+            <form id="experiment-form" class="card">
+              <label>
+                Experiment name
+                <input id="experiment-name" type="text" value="sentiment-workbench" required />
+              </label>
+              <button type="submit" class="primary">Save experiment</button>
+              <p id="experiment-msg" class="hint"></p>
+            </form>
+            <div class="card">
+              <h3>Existing experiments</h3>
+              <ul id="experiment-list" class="plain-list"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="panel-dataset" class="panel">
+          <header class="panel-head">
+            <p class="kicker">02 · Dataset</p>
+            <h2>Load a synthetic classification split</h2>
+            <p class="lede">
+              Tiny sentiment data (positive / negative / neutral). Primary metric is <strong>macro F1</strong>.
+            </p>
+          </header>
+          <div class="row-actions">
+            <button id="load-bundled" class="primary" type="button">Load bundled CSV</button>
+            <button id="load-generated" class="secondary" type="button">Generate extra rows</button>
+          </div>
+          <div id="dataset-summary" class="card muted-card"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Split</th>
+                  <th>Text</th>
+                  <th>Label</th>
+                </tr>
+              </thead>
+              <tbody id="dataset-preview"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="panel-train" class="panel">
+          <header class="panel-head">
+            <p class="kicker">03 · Train</p>
+            <h2>Run a classifier and log it to MLflow</h2>
+            <p class="lede">
+              OpenAI nano-class prompting, or a local heuristic for an offline walkthrough. Each run logs
+              params, F1, and a pyfunc model.
+            </p>
+          </header>
+          <form id="train-form" class="card">
+            <div class="grid three">
+              <label>
+                Model
+                <select id="train-model">
+                  <option value="gpt-5-nano">gpt-5-nano (OpenAI)</option>
+                  <option value="gpt-4o-mini">gpt-4o-mini (fallback)</option>
+                  <option value="local-heuristic" selected>local-heuristic (offline)</option>
+                  <option value="local-heuristic-weak">local-heuristic-weak (baseline)</option>
+                </select>
+              </label>
+              <label>
+                Prompt variant
+                <select id="train-prompt">
+                  <option value="concise">concise</option>
+                  <option value="few-shot">few-shot</option>
+                </select>
+              </label>
+              <label>
+                Temperature
+                <input id="train-temp" type="number" min="0" max="1" step="0.1" value="0" />
+              </label>
+            </div>
+            <button type="submit" class="primary" id="train-btn">Train &amp; evaluate</button>
+            <p id="train-msg" class="hint"></p>
+          </form>
+          <div id="train-result"></div>
+        </section>
+
+        <section id="panel-evaluate" class="panel">
+          <header class="panel-head">
+            <p class="kicker">04 · Evaluate</p>
+            <h2>Compare runs by macro F1</h2>
+            <p class="lede">
+              Metrics are stored on the MLflow run. Use the deep links for artifacts, traces, and the full UI.
+            </p>
+          </header>
+          <div class="row-actions">
+            <button id="refresh-runs" class="secondary" type="button">Refresh comparison</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Model</th>
+                  <th>Prompt</th>
+                  <th>F1 macro</th>
+                  <th>Precision</th>
+                  <th>Recall</th>
+                  <th>Accuracy</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="runs-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="panel-promote" class="panel">
+          <header class="panel-head">
+            <p class="kicker">05 · Promote</p>
+            <h2>Finalize a model via the registry</h2>
+            <p class="lede">
+              Promotion assigns a Model Registry alias (<code>champion</code> / <code>challenger</code>) on the
+              <em>same</em> MLflow server. That is the production pointer — not a new experiment.
+            </p>
+          </header>
+          <form id="promote-form" class="card">
+            <div class="grid three">
+              <label>
+                Run id
+                <input id="promote-run" type="text" required placeholder="from a completed run" />
+              </label>
+              <label>
+                Registered name
+                <input id="promote-name" type="text" value="sentiment-classifier" />
+              </label>
+              <label>
+                Alias
+                <select id="promote-alias">
+                  <option value="champion">champion (production)</option>
+                  <option value="challenger">challenger</option>
+                </select>
+              </label>
+            </div>
+            <button type="submit" class="primary">Register &amp; set alias</button>
+            <p id="promote-msg" class="hint"></p>
+          </form>
+          <div id="registry-card" class="card muted-card"></div>
+        </section>
+
+        <section id="panel-production" class="panel">
+          <header class="panel-head">
+            <p class="kicker">06 · Production</p>
+            <h2>Serve <code>models:/name@champion</code></h2>
+            <p class="lede">
+              Inference loads the alias. Optional MLflow traces land in
+              <code>workbench-production-traces</code> for monitoring — they are not training runs.
+            </p>
+          </header>
+          <form id="predict-form" class="card">
+            <label>
+              Texts (one per line)
+              <textarea id="predict-texts" rows="6">
+I am delighted with this update.
+This is a dumpster fire and I want a refund.
+The shipment includes two adapters.</textarea
+              >
+            </label>
+            <button type="submit" class="primary">Run champion inference</button>
+            <p id="predict-msg" class="hint"></p>
+          </form>
+          <div id="predict-result"></div>
+        </section>
+      </main>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

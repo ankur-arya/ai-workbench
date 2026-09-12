@@ -1,0 +1,43 @@
+split,text,label
+train,The product exceeded every expectation. Absolutely thrilled with it.,positive
+train,I love how intuitive and fast this experience feels.,positive
+train,Outstanding quality and delightful customer support throughout.,positive
+train,This made my day. Truly a wonderful surprise.,positive
+train,Fantastic value and the results are consistently excellent.,positive
+train,I am so happy I switched. Everything just works.,positive
+train,Beautiful design and a genuinely enjoyable workflow.,positive
+train,Highly recommend this to anyone looking for a reliable tool.,positive
+train,The update is a huge improvement. Great job team.,positive
+train,Warm, thoughtful, and surprisingly powerful. I am impressed.,positive
+train,This is the worst purchase I have made this year.,negative
+train,Terrible quality and the support team never replied.,negative
+train,I hate how slow and confusing the interface is.,negative
+train,Awful experience from start to finish. Do not buy.,negative
+train,Completely disappointed. It broke after a single day.,negative
+train,Frustrating bugs keep ruining my work. Unacceptable.,negative
+train,The documentation is useless and the product feels broken.,negative
+train,Painfully overpriced for such a disappointing result.,negative
+train,I regret paying for this. Nothing works as advertised.,negative
+train,Customer service was rude and the refund was denied.,negative
+train,It arrived on Tuesday and I installed it after lunch.,neutral
+train,The package contains a manual, a cable, and a unit.,neutral
+train,I used the default settings for the first session.,neutral
+train,The office is located on the third floor downtown.,neutral
+train,This note summarizes yesterday's meeting agenda items.,neutral
+train,The file was exported as CSV and stored locally.,neutral
+train,There are three color options listed on the page.,neutral
+train,I scheduled the appointment for Friday afternoon.,neutral
+train,The battery indicator shows 64 percent remaining.,neutral
+train,Version 2.1 shipped with the standard changelog notes.,neutral
+test,I am delighted with how well this solved my problem.,positive
+test,Such a joyful, polished product. I will buy again.,positive
+test,Excellent performance and the onboarding was a breeze.,positive
+test,This is a dumpster fire. I want my money back.,negative
+test,Horrible lag and constant crashes. I am furious.,negative
+test,The worst onboarding I have ever suffered through.,negative
+test,The shipment includes two adapters and a quickstart card.,neutral
+test,I opened the app and clicked the settings tab.,neutral
+test,The report covers Q3 headcount and office locations.,neutral
+test,What a brilliant upgrade. Everything feels smoother now.,positive
+test,Sadly this failed every test I ran. Total letdown.,negative
+test,Minutes from the standup are attached for review.,neutral
