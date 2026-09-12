@@ -9,6 +9,7 @@ def test_health_and_full_http_lifecycle():
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.json()["primary_metric"] == "f1_macro"
+    assert health.json()["openai_configured"] is False
 
     created = client.post("/api/experiments", json={"name": DEFAULT_EXPERIMENT})
     assert created.status_code == 200

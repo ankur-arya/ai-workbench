@@ -52,7 +52,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# edit .env and set OPENAI_API_KEY if you want the LLM path
+# edit .env — LLM path requires all three: OPENAI_API_KEY, OPENAI_ORG, OPENAI_PROJECT
 ```
 
 Start the MLflow tracking server (SQLite + local artifacts) and the workbench:
@@ -101,6 +101,8 @@ python scripts/run_demo.py
 | `gpt-4o-mini` | Configured fallback (`OPENAI_FALLBACK_MODEL`) |
 | `local-heuristic` | Offline demo / CI |
 | `local-heuristic-weak` | Weaker lexicon so comparison is visible |
+
+LLM calls construct `OpenAI(api_key=..., organization=..., project=...)`. If any of `OPENAI_API_KEY`, `OPENAI_ORG`, or `OPENAI_PROJECT` is missing, the workbench raises a clear error instead of sending an unscoped request. The local heuristic path does not need these variables.
 
 GPT-5 family calls use `max_completion_tokens` (not `max_tokens`). If the preferred id is missing or rejected, the client walks the fallback chain.
 

@@ -75,7 +75,11 @@ def health() -> dict[str, Any]:
         "mlflow_ui_url": ui_url(),
         "mlflow_reachable": reachable,
         "mlflow_detail": detail,
-        "openai_configured": bool(settings.openai_api_key),
+        "openai_configured": bool(
+            settings.openai_api_key and settings.openai_org and settings.openai_project
+        ),
+        "openai_org_configured": bool(settings.openai_org),
+        "openai_project_configured": bool(settings.openai_project),
         "default_openai_model": settings.openai_model,
         "fallback_openai_model": settings.openai_fallback_model,
         "registered_model_name": settings.mlflow_registered_model_name,
