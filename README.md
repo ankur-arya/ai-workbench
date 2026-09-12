@@ -81,7 +81,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 1. Open the workbench. Confirm the MLflow pill is connected.
 2. **Experiment** — create `sentiment-workbench` (or pick an existing one).
 3. **Dataset** — load the bundled CSV (`data/sentiment.csv`) or generate a slightly larger split.
-4. **Train** — run `local-heuristic` first (offline). Then, with `OPENAI_API_KEY` set, run `gpt-5-nano` / `few-shot`. Each run logs macro F1, precision, recall, accuracy, predictions, and a pyfunc model.
+4. **Train** — run `local-heuristic` first (offline). Then, with `OPENAI_API_KEY`, `OPENAI_ORG`, and `OPENAI_PROJECT` set, run `gpt-5-nano` / `few-shot`. Each run logs macro F1, precision, recall, accuracy, predictions, and a pyfunc model.
 5. **Evaluate** — compare runs (sorted by F1). Follow the MLflow links for artifacts.
 6. **Promote** — register the best run as `sentiment-classifier` and set alias `champion` (optionally `challenger` first).
 7. **Production** — score new lines of text. The app loads `models:/sentiment-classifier@champion` and writes an inference span to `workbench-production-traces`.
