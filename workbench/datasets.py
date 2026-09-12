@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from workbench.config import DEFAULT_DATASET_ID, LABELS, ROOT, get_settings
@@ -22,6 +23,7 @@ class ClassificationDataset:
     test_labels: list[str]
     source: str = "bundled-csv"
     description: str = "Synthetic 3-class sentiment (positive / negative / neutral)."
+    loaded_at: str = ""
 
     @property
     def n_train(self) -> int:
@@ -56,6 +58,7 @@ class ClassificationDataset:
             "description": self.description,
             "preview": self.preview(),
             "primary_metric": "f1_macro",
+            "loaded_at": self.loaded_at or datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
         }
 
 
@@ -88,7 +91,8 @@ def _read_csv(path: Path) -> ClassificationDataset:
         train_labels=train_labels,
         test_texts=test_texts,
         test_labels=test_labels,
-        source=str(path),
+        source=str(path.resolve()),
+        loaded_at=datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
     )
 
 
@@ -108,11 +112,33 @@ _GENERATED_TEST = [
 ]
 
 
+def resolve_bundled_csv() -> Path:
+    """Find sentiment.csv even if the process cwd is not the repo root."""
+    settings_dir = Path(get_settings().data_dir)
+    candidates = [
+        settings_dir / "sentiment.csv",
+        BUNDLED_CSV,
+        ROOT / "data" / "sentiment.csv",
+        Path(__file__).resolve().parents[1] / "data" / "sentiment.csv",
+        Path.cwd() / "data" / "sentiment.csv",
+    ]
+    seen: set[str] = set()
+    for path in candidates:
+        resolved = path.expanduser()
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        if resolved.is_file():
+            return resolved
+    raise FileNotFoundError(
+        "Could not find data/sentiment.csv. Looked next to the package, "
+        f"under {settings_dir}, and under the current working directory ({Path.cwd()})."
+    )
+
+
 def load_bundled_dataset() -> ClassificationDataset:
-    path = get_settings().data_dir / "sentiment.csv"
-    if not path.exists():
-        path = BUNDLED_CSV
-    return _read_csv(path)
+    return _read_csv(resolve_bundled_csv())
 
 
 def generate_synthetic_dataset(dataset_id: str = "sentiment-generated") -> ClassificationDataset:
@@ -138,6 +164,7 @@ def generate_synthetic_dataset(dataset_id: str = "sentiment-generated") -> Class
         test_labels=test_labels,
         source="generated",
         description="Bundled synthetic sentiment plus extra generated rows.",
+        loaded_at=datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
     )
 
 

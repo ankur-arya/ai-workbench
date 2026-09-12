@@ -17,7 +17,13 @@ from workbench.config import (
     PRIMARY_METRIC,
     get_settings,
 )
-from workbench.datasets import generate_synthetic_dataset, get_dataset, list_datasets, put_dataset
+from workbench.datasets import (
+    generate_synthetic_dataset,
+    get_dataset,
+    list_datasets,
+    load_bundled_dataset,
+    put_dataset,
+)
 from workbench.mlflow_ops import (
     champion_status,
     experiment_url,
@@ -112,13 +118,19 @@ def api_list_datasets() -> dict[str, Any]:
 
 @app.post("/api/datasets")
 def api_create_dataset(body: DatasetCreate) -> dict[str, Any]:
-    if body.mode == "generated":
-        dataset = put_dataset(generate_synthetic_dataset(body.dataset_id))
-    else:
-        try:
-            dataset = get_dataset(body.dataset_id)
-        except KeyError:
-            dataset = put_dataset(generate_synthetic_dataset(body.dataset_id))
+    try:
+        if body.mode == "generated":
+            dataset = put_dataset(generate_synthetic_dataset(body.dataset_id or "sentiment-generated"))
+        elif body.mode == "bundled":
+            dataset = put_dataset(load_bundled_dataset())
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown dataset mode: {body.mode}")
+    except HTTPException:
+        raise
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Could not load dataset: {exc}") from exc
     return dataset.to_summary()
 
 

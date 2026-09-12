@@ -23,6 +23,23 @@ function persist() {
   localStorage.setItem("wb.modelName", state.modelName);
 }
 
+function formatDetail(detail) {
+  if (!detail && detail !== 0) return "";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") return item.msg || item.message || JSON.stringify(item);
+        return String(item);
+      })
+      .filter(Boolean)
+      .join("; ");
+  }
+  if (typeof detail === "object") return detail.msg || detail.message || JSON.stringify(detail);
+  return String(detail);
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
@@ -30,7 +47,7 @@ async function api(path, options = {}) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.detail || response.statusText);
+    throw new Error(formatDetail(payload.detail) || response.statusText || "Request failed");
   }
   return payload;
 }
@@ -59,8 +76,10 @@ function renderSteps() {
 
 function setHint(id, message, isError = false) {
   const el = document.getElementById(id);
+  if (!el) return;
   el.textContent = message;
   el.classList.toggle("error", Boolean(isError));
+  el.classList.toggle("ok", Boolean(message) && !isError);
 }
 
 function fmt(value) {
@@ -127,25 +146,52 @@ document.getElementById("experiment-form").addEventListener("submit", async (eve
   }
 });
 
-function renderDataset(summary) {
+function renderDataset(summary, { highlight = false } = {}) {
   state.datasetId = summary.dataset_id;
   persist();
   renderSteps();
-  document.getElementById("dataset-summary").innerHTML = `
-    <p><strong>${summary.name}</strong> · ${summary.n_train} train / ${summary.n_test} test · labels: ${summary.labels.join(", ")}</p>
-    <p class="hint">${summary.description} Primary metric: ${summary.primary_metric}.</p>
+  const card = document.getElementById("dataset-summary");
+  const loadedAt = summary.loaded_at ? ` · loaded ${summary.loaded_at}` : "";
+  card.innerHTML = `
+    <p><strong>${summary.name}</strong> · ${summary.n_train} train / ${summary.n_test} test · labels: ${(summary.labels || []).join(", ")}</p>
+    <p class="hint">${summary.description || ""} Primary metric: ${summary.primary_metric || "f1_macro"}.${loadedAt}</p>
   `;
-  document.getElementById("dataset-preview").innerHTML = summary.preview
+  card.classList.toggle("just-loaded", highlight);
+  if (highlight) {
+    window.setTimeout(() => card.classList.remove("just-loaded"), 1600);
+  }
+  const preview = summary.preview || [];
+  document.getElementById("dataset-preview").innerHTML = preview
     .map((row) => `<tr><td>${row.split}</td><td>${row.text}</td><td>${row.label}</td></tr>`)
     .join("");
 }
 
 async function loadDataset(mode, datasetId) {
-  const summary = await api("/api/datasets", {
-    method: "POST",
-    body: JSON.stringify({ mode, dataset_id: datasetId }),
+  const bundled = document.getElementById("load-bundled");
+  const generated = document.getElementById("load-generated");
+  const buttons = [bundled, generated].filter(Boolean);
+  buttons.forEach((btn) => {
+    btn.disabled = true;
   });
-  renderDataset(summary);
+  const pending = mode === "generated" ? "Generating extra rows…" : "Loading bundled CSV…";
+  setHint("dataset-msg", pending);
+  try {
+    const summary = await api("/api/datasets", {
+      method: "POST",
+      body: JSON.stringify({ mode, dataset_id: datasetId }),
+    });
+    renderDataset(summary, { highlight: true });
+    setHint(
+      "dataset-msg",
+      `Loaded ${summary.dataset_id} · ${summary.n_train} train / ${summary.n_test} test`
+    );
+  } catch (err) {
+    setHint("dataset-msg", err.message || String(err), true);
+  } finally {
+    buttons.forEach((btn) => {
+      btn.disabled = false;
+    });
+  }
 }
 
 document.getElementById("load-bundled").addEventListener("click", () => loadDataset("bundled", "sentiment-v1"));
@@ -297,10 +343,22 @@ async function boot() {
     if (state.datasetId) {
       const datasets = await api("/api/datasets");
       const current = datasets.datasets.find((item) => item.dataset_id === state.datasetId);
-      if (current) renderDataset(current);
+      if (current) {
+        renderDataset(current);
+        setHint(
+          "dataset-msg",
+          `Ready: ${current.dataset_id} · ${current.n_train} train / ${current.n_test} test. Click a button to reload.`
+        );
+      }
     } else {
       const datasets = await api("/api/datasets");
-      if (datasets.datasets[0]) renderDataset(datasets.datasets[0]);
+      if (datasets.datasets[0]) {
+        renderDataset(datasets.datasets[0]);
+        setHint(
+          "dataset-msg",
+          `Ready: ${datasets.datasets[0].dataset_id} · ${datasets.datasets[0].n_train} train / ${datasets.datasets[0].n_test} test. Click a button to reload.`
+        );
+      }
     }
     if (state.experimentId) await refreshRuns();
     await refreshRegistry();
