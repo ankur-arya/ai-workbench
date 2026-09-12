@@ -34,6 +34,20 @@ PROMPT_VARIANTS = {
     "few-shot": FEWSHOT_SYSTEM,
 }
 
+
+def resolve_prompt_template(prompt_variant: str = "concise", prompt_template: str | None = None) -> str:
+    if prompt_template and prompt_template.strip():
+        return prompt_template
+    return PROMPT_VARIANTS.get(prompt_variant, CONCISE_SYSTEM)
+
+
+def render_prompt(template: str, labels: tuple[str, ...] | list[str] = LABELS) -> str:
+    label_text = ", ".join(labels)
+    try:
+        return template.format(labels=label_text)
+    except (KeyError, IndexError, ValueError):
+        return template.replace("{labels}", label_text)
+
 _POS = {
     "love",
     "great",
@@ -148,6 +162,7 @@ def openai_classify(
     *,
     model: str | None = None,
     prompt_variant: str = "concise",
+    prompt_template: str | None = None,
     temperature: float = 0.0,
     labels: tuple[str, ...] = LABELS,
 ) -> tuple[str, str]:
@@ -158,9 +173,9 @@ def openai_classify(
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key, organization=organization, project=project)
-    template = PROMPT_VARIANTS.get(prompt_variant, CONCISE_SYSTEM)
+    template = resolve_prompt_template(prompt_variant, prompt_template)
     messages = [
-        {"role": "system", "content": template.format(labels=", ".join(labels))},
+        {"role": "system", "content": render_prompt(template, labels)},
         {"role": "user", "content": text},
     ]
     preferred = model or settings.openai_model
@@ -185,6 +200,7 @@ def classify_texts(
     *,
     model: str,
     prompt_variant: str = "concise",
+    prompt_template: str | None = None,
     temperature: float = 0.0,
     labels: tuple[str, ...] = LABELS,
 ) -> tuple[list[str], str]:
@@ -200,6 +216,7 @@ def classify_texts(
             text,
             model=model,
             prompt_variant=prompt_variant,
+            prompt_template=prompt_template,
             temperature=temperature,
             labels=labels,
         )
@@ -236,12 +253,14 @@ class TextClassifierModel(mlflow.pyfunc.PythonModel):
         texts = self._texts(model_input)
         model = self.config.get("model", LOCAL_HEURISTIC_MODEL)
         prompt_variant = self.config.get("prompt_variant", "concise")
+        prompt_template = self.config.get("prompt_template")
         temperature = float(self.config.get("temperature", 0.0))
         labels = tuple(self.config.get("labels", LABELS))
         predictions, _ = classify_texts(
             texts,
             model=model,
             prompt_variant=prompt_variant,
+            prompt_template=prompt_template,
             temperature=temperature,
             labels=labels,
         )

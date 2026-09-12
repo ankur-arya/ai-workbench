@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -17,13 +17,18 @@ from workbench.config import (
     PRIMARY_METRIC,
     get_settings,
 )
+from workbench.classifier import PROMPT_VARIANTS
 from workbench.datasets import (
+    DatasetParseError,
+    dataset_id_from_filename,
     generate_synthetic_dataset,
     get_dataset,
     list_datasets,
     load_bundled_dataset,
+    parse_classification_csv,
     put_dataset,
 )
+from workbench.model_configs import get_config, list_configs, prompt_templates, save_config
 from workbench.mlflow_ops import (
     champion_status,
     experiment_url,
@@ -53,10 +58,21 @@ class DatasetCreate(BaseModel):
 class TrainRequest(BaseModel):
     experiment_name: str = DEFAULT_EXPERIMENT
     dataset_id: str
-    model: str = LOCAL_HEURISTIC_MODEL
-    prompt_variant: str = "concise"
-    temperature: float = 0.0
+    config_id: str | None = None
+    model: str | None = None
+    prompt_variant: str | None = None
+    prompt_template: str | None = None
+    temperature: float | None = None
     run_name: str | None = None
+
+
+class ClassifierConfigCreate(BaseModel):
+    name: str
+    llm: str = LOCAL_HEURISTIC_MODEL
+    prompt_variant: str = "custom"
+    prompt_template: str
+    temperature: float = 0.0
+    config_id: str | None = None
 
 
 class PromoteRequest(BaseModel):
@@ -92,6 +108,7 @@ def health() -> dict[str, Any]:
         "primary_metric": PRIMARY_METRIC,
         "labels": list(LABELS),
         "local_heuristic_model": LOCAL_HEURISTIC_MODEL,
+        "prompt_variants": list(PROMPT_VARIANTS.keys()),
     }
 
 
@@ -134,6 +151,31 @@ def api_create_dataset(body: DatasetCreate) -> dict[str, Any]:
     return dataset.to_summary()
 
 
+@app.post("/api/datasets/upload")
+async def api_upload_dataset(file: UploadFile = File(...)) -> dict[str, Any]:
+    filename = file.filename or "upload.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Please upload a .csv file.")
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    try:
+        text = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded.") from exc
+    dataset_id = dataset_id_from_filename(filename)
+    try:
+        dataset = parse_classification_csv(
+            text,
+            dataset_id=dataset_id,
+            name=filename,
+            source=f"upload:{filename}",
+        )
+    except DatasetParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return put_dataset(dataset).to_summary()
+
+
 @app.get("/api/datasets/{dataset_id}")
 def api_get_dataset(dataset_id: str) -> dict[str, Any]:
     try:
@@ -143,16 +185,66 @@ def api_get_dataset(dataset_id: str) -> dict[str, Any]:
     return dataset.to_summary()
 
 
+@app.get("/api/classifier-configs")
+def api_list_classifier_configs() -> dict[str, Any]:
+    return {
+        "configs": [item.to_dict() for item in list_configs()],
+        "prompt_templates": prompt_templates(),
+    }
+
+
+@app.post("/api/classifier-configs")
+def api_save_classifier_config(body: ClassifierConfigCreate) -> dict[str, Any]:
+    if not body.prompt_template.strip():
+        raise HTTPException(status_code=400, detail="Prompt template cannot be empty.")
+    config = save_config(
+        name=body.name,
+        llm=body.llm,
+        prompt_variant=body.prompt_variant,
+        prompt_template=body.prompt_template,
+        temperature=body.temperature,
+        config_id=body.config_id,
+    )
+    return config.to_dict()
+
+
+@app.get("/api/classifier-configs/{config_id}")
+def api_get_classifier_config(config_id: str) -> dict[str, Any]:
+    try:
+        return get_config(config_id).to_dict()
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Model config not found") from exc
+
+
 @app.post("/api/runs/train")
 def api_train(body: TrainRequest) -> dict[str, Any]:
+    model = body.model
+    prompt_variant = body.prompt_variant
+    prompt_template = body.prompt_template
+    temperature = 0.0 if body.temperature is None else body.temperature
+    config_id = body.config_id
+    if config_id:
+        try:
+            saved = get_config(config_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"Unknown model config: {config_id}") from exc
+        model = model or saved.llm
+        prompt_variant = prompt_variant or saved.prompt_variant
+        prompt_template = prompt_template or saved.prompt_template
+        if body.temperature is None:
+            temperature = saved.temperature
+    model = model or LOCAL_HEURISTIC_MODEL
+    prompt_variant = prompt_variant or "concise"
     try:
         return train_and_evaluate(
             experiment_name=body.experiment_name.strip(),
             dataset_id=body.dataset_id,
-            model=body.model,
-            prompt_variant=body.prompt_variant,
-            temperature=body.temperature,
+            model=model,
+            prompt_variant=prompt_variant,
+            prompt_template=prompt_template,
+            temperature=temperature,
             run_name=body.run_name,
+            config_id=config_id,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Unknown dataset: {exc}") from exc

@@ -11,7 +11,7 @@ import mlflow
 import pandas as pd
 from mlflow.models import infer_signature
 
-from workbench.classifier import TextClassifierModel, classify_texts
+from workbench.classifier import TextClassifierModel, classify_texts, resolve_prompt_template
 from workbench.config import (
     DEFAULT_EXPERIMENT,
     LABELS,
@@ -60,8 +60,10 @@ def train_and_evaluate(
     dataset_id: str,
     model: str,
     prompt_variant: str = "concise",
+    prompt_template: str | None = None,
     temperature: float = 0.0,
     run_name: str | None = None,
+    config_id: str | None = None,
 ) -> dict[str, Any]:
     """Fit-less LLM/heuristic classifier: predict on the test split and log metrics."""
     configure_mlflow()
@@ -74,6 +76,7 @@ def train_and_evaluate(
     except Exception:
         pass
 
+    resolved_template = resolve_prompt_template(prompt_variant, prompt_template)
     display_name = run_name or f"{model}-{prompt_variant}"
     with mlflow.start_run(experiment_id=experiment["experiment_id"], run_name=display_name) as run:
         run_id = run.info.run_id
@@ -83,6 +86,7 @@ def train_and_evaluate(
                 "dataset_id": dataset.dataset_id,
                 "workbench": "ai-workbench",
                 "primary_metric": PRIMARY_METRIC,
+                **({"config_id": config_id} if config_id else {}),
             }
         )
         mlflow.log_params(
@@ -94,6 +98,7 @@ def train_and_evaluate(
                 "n_test": dataset.n_test,
                 "labels": ",".join(dataset.labels),
                 "dataset_id": dataset.dataset_id,
+                **({"config_id": config_id} if config_id else {}),
             }
         )
 
@@ -101,6 +106,7 @@ def train_and_evaluate(
             dataset.test_texts,
             model=model,
             prompt_variant=prompt_variant,
+            prompt_template=resolved_template,
             temperature=temperature,
             labels=dataset.labels,
         )
@@ -133,17 +139,23 @@ def train_and_evaluate(
             config = {
                 "model": resolved_model,
                 "prompt_variant": prompt_variant,
+                "prompt_template": resolved_template,
                 "temperature": temperature,
                 "labels": list(dataset.labels),
                 "requested_model": model,
+                "config_id": config_id,
             }
             config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
             mlflow.log_artifact(str(config_path), artifact_path="eval")
+            prompt_path = tmp_path / "prompt_template.txt"
+            prompt_path.write_text(resolved_template, encoding="utf-8")
+            mlflow.log_artifact(str(prompt_path), artifact_path="eval")
 
         pyfunc = TextClassifierModel(
             {
                 "model": resolved_model,
                 "prompt_variant": prompt_variant,
+                "prompt_template": resolved_template,
                 "temperature": temperature,
                 "labels": list(dataset.labels),
             }
@@ -158,6 +170,8 @@ def train_and_evaluate(
             "model": model,
             "resolved_model": resolved_model,
             "prompt_variant": prompt_variant,
+            "prompt_template": resolved_template,
+            "config_id": config_id,
             "metrics": metrics,
             "primary_metric": PRIMARY_METRIC,
             "predictions": rows,

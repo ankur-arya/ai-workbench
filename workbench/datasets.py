@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import csv
+import io
+import re
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from workbench.config import DEFAULT_DATASET_ID, LABELS, ROOT, get_settings
+
+REQUIRED_CSV_COLUMNS = ("split", "text", "label")
 
 BUNDLED_CSV = ROOT / "data" / "sentiment.csv"
 
@@ -60,6 +65,86 @@ class ClassificationDataset:
             "primary_metric": "f1_macro",
             "loaded_at": self.loaded_at or datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
         }
+
+
+class DatasetParseError(ValueError):
+    """User-facing CSV validation error."""
+
+
+def dataset_id_from_filename(filename: str) -> str:
+    stem = Path(filename or "upload").stem
+    safe = re.sub(r"[^a-zA-Z0-9_-]+", "-", stem).strip("-").lower() or "upload"
+    return f"{safe}-{uuid.uuid4().hex[:6]}"
+
+
+def parse_classification_csv(
+    raw: str,
+    *,
+    dataset_id: str,
+    name: str,
+    source: str = "upload",
+    labels: tuple[str, ...] = LABELS,
+) -> ClassificationDataset:
+    """Parse an uploaded CSV. Requires split, text, label and both train and test rows."""
+    sample = raw.lstrip("\ufeff")
+    reader = csv.DictReader(io.StringIO(sample))
+    if not reader.fieldnames:
+        raise DatasetParseError("CSV is empty or has no header row.")
+    fields = {name.strip().lower() for name in reader.fieldnames if name}
+    missing = [col for col in REQUIRED_CSV_COLUMNS if col not in fields]
+    if missing:
+        raise DatasetParseError(
+            "CSV must include columns: split, text, label. "
+            f"Missing: {', '.join(missing)}."
+        )
+
+    train_texts: list[str] = []
+    train_labels: list[str] = []
+    test_texts: list[str] = []
+    test_labels: list[str] = []
+    allowed = set(labels)
+    for index, row in enumerate(reader, start=2):
+        normalized = {(key or "").strip().lower(): (value or "").strip() for key, value in row.items()}
+        split = normalized.get("split", "").lower()
+        text = normalized.get("text", "")
+        label = normalized.get("label", "").lower()
+        if not text and not label and not split:
+            continue
+        if split not in {"train", "test"}:
+            raise DatasetParseError(
+                f"Row {index} has split '{normalized.get('split', '') or '(empty)'}'; use train or test."
+            )
+        if not text:
+            raise DatasetParseError(f"Row {index} is missing text.")
+        if label not in allowed:
+            raise DatasetParseError(
+                f"Row {index} has label '{normalized.get('label', '') or '(empty)'}'; "
+                f"allowed labels are {', '.join(labels)}."
+            )
+        if split == "test":
+            test_texts.append(text)
+            test_labels.append(label)
+        else:
+            train_texts.append(text)
+            train_labels.append(label)
+
+    if not train_texts:
+        raise DatasetParseError("CSV has no train rows (split=train).")
+    if not test_texts:
+        raise DatasetParseError("CSV has no test rows (split=test).")
+
+    return ClassificationDataset(
+        dataset_id=dataset_id,
+        name=name,
+        labels=labels,
+        train_texts=train_texts,
+        train_labels=train_labels,
+        test_texts=test_texts,
+        test_labels=test_labels,
+        source=source,
+        description=f"Uploaded classification CSV ({len(train_texts)} train / {len(test_texts)} test).",
+        loaded_at=datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+    )
 
 
 def _read_csv(path: Path) -> ClassificationDataset:
