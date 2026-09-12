@@ -19,6 +19,23 @@ def test_health_and_full_http_lifecycle():
     assert datasets.status_code == 200
     assert datasets.json()["datasets"]
 
+    bundled = client.post("/api/datasets", json={"mode": "bundled", "dataset_id": "sentiment-v1"})
+    assert bundled.status_code == 200, bundled.text
+    bundled_body = bundled.json()
+    assert bundled_body["dataset_id"] == DEFAULT_DATASET_ID
+    assert bundled_body["n_train"] >= 24
+    assert bundled_body["n_test"] >= 9
+    assert bundled_body["preview"]
+    assert bundled_body["loaded_at"]
+
+    generated = client.post("/api/datasets", json={"mode": "generated", "dataset_id": "sentiment-generated"})
+    assert generated.status_code == 200, generated.text
+    assert generated.json()["n_train"] > bundled_body["n_train"]
+    assert generated.json()["preview"]
+
+    unknown = client.post("/api/datasets", json={"mode": "nope", "dataset_id": "x"})
+    assert unknown.status_code == 400
+
     train = client.post(
         "/api/runs/train",
         json={
