@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     )
 
     openai_api_key: str = ""
+    openai_org: str = ""
+    openai_project: str = ""
     openai_model: str = "gpt-5-nano"
     openai_fallback_model: str = "gpt-4o-mini"
 

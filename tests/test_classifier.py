@@ -1,4 +1,11 @@
-from workbench.classifier import TextClassifierModel, classify_texts, heuristic_classify
+import pytest
+
+from workbench.classifier import (
+    TextClassifierModel,
+    classify_texts,
+    heuristic_classify,
+    require_openai_credentials,
+)
 
 
 def test_heuristic_labels_clear_sentiment():
@@ -20,3 +27,30 @@ def test_local_batch_and_pyfunc_predict():
     wrapped = TextClassifierModel({"model": "local-heuristic", "labels": ["positive", "negative", "neutral"]})
     assert wrapped.predict({"text": texts}) == preds
     assert wrapped.predict(texts) == preds
+
+
+def test_openai_requires_key_org_and_project(monkeypatch):
+    from workbench.config import get_settings
+
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("OPENAI_ORG", "")
+    monkeypatch.setenv("OPENAI_PROJECT", "")
+    get_settings.cache_clear()
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY, OPENAI_ORG, and OPENAI_PROJECT"):
+        require_openai_credentials()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    get_settings.cache_clear()
+    with pytest.raises(RuntimeError, match="OPENAI_ORG"):
+        require_openai_credentials()
+
+    monkeypatch.setenv("OPENAI_ORG", "org-test")
+    get_settings.cache_clear()
+    with pytest.raises(RuntimeError, match="OPENAI_PROJECT"):
+        require_openai_credentials()
+
+    monkeypatch.setenv("OPENAI_PROJECT", "proj-test")
+    get_settings.cache_clear()
+    key, org, project = require_openai_credentials()
+    assert (key, org, project) == ("sk-test", "org-test", "proj-test")
+    get_settings.cache_clear()
