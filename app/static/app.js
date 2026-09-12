@@ -281,7 +281,6 @@ document.getElementById("model-form").addEventListener("submit", async (event) =
         prompt_variant: document.getElementById("model-variant").value,
         prompt_template: document.getElementById("model-prompt").value,
         temperature: Number(document.getElementById("model-temp").value || 0),
-        config_id: state.configId || undefined,
       }),
     });
     renderSavedConfig(config);
