@@ -291,8 +291,23 @@ textarea {
 
 .row-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.file-btn input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
 }
 
 .hint {
@@ -306,6 +321,13 @@ textarea {
 
 .hint.ok {
   color: var(--lime);
+}
+
+pre.hint {
+  white-space: pre-wrap;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  margin: 8px 0 0;
 }
 
 .primary:disabled,

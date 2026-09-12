@@ -31,8 +31,12 @@ Experiment               Model Registry            pyfunc load
 
 **Both, with a clear split.**
 
-- **This workbench UI** orchestrates the lifecycle: create an experiment, load/generate a dataset, kick off train/eval, compare macro F1, promote a run, run champion inference.
+- **This workbench UI** orchestrates the lifecycle: create an experiment, load/import a dataset, define a prompt+LLM on the Model step, run/eval, compare macro F1, promote a run, run champion inference.
 - **MLflow’s native UI** is the deep-link destination for run details, artifacts, traces, and the registry. We do not reinvent the tracking UI.
+
+### 3. Why is Model a separate step from Train?
+
+**Define the artifact, then run it.** The Model step is where you attach a system prompt (`{labels}` placeholder) to an LLM or `local-heuristic`. That saved config is the candidate classifier. Train only **evaluates** that definition on the selected dataset and logs F1 / a pyfunc model to MLflow. Mixing prompt authoring into Train hid the fact that the prompt+LLM *is* the model.
 
 ## Stack
 
@@ -80,11 +84,12 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 1. Open the workbench. Confirm the MLflow pill is connected.
 2. **Experiment** — create `sentiment-workbench` (or pick an existing one).
-3. **Dataset** — load the bundled CSV (`data/sentiment.csv`) or generate a slightly larger split.
-4. **Train** — run `local-heuristic` first (offline). Then, with `OPENAI_API_KEY`, `OPENAI_ORG`, and `OPENAI_PROJECT` set, run `gpt-5-nano` / `few-shot`. Each run logs macro F1, precision, recall, accuracy, predictions, and a pyfunc model.
-5. **Evaluate** — compare runs (sorted by F1). Follow the MLflow links for artifacts.
-6. **Promote** — register the best run as `sentiment-classifier` and set alias `champion` (optionally `challenger` first).
-7. **Production** — score new lines of text. The app loads `models:/sentiment-classifier@champion` and writes an inference span to `workbench-production-traces`.
+3. **Dataset** — load the bundled CSV, generate extra rows, or **Import CSV** (`split`, `text`, `label` columns; labels must be positive / negative / neutral).
+4. **Model** — edit the prompt template, pick `local-heuristic` or `gpt-5-nano`, save the config. This is the classifier definition.
+5. **Train** — run evaluation using the saved config + selected dataset (overrides optional). Logs macro F1, the prompt text, and a pyfunc model.
+6. **Evaluate** — compare runs (sorted by F1). Follow the MLflow links for artifacts.
+7. **Promote** — register the best run as `sentiment-classifier` and set alias `champion` (optionally `challenger` first).
+8. **Production** — score new lines of text. The app loads `models:/sentiment-classifier@champion` and writes an inference span to `workbench-production-traces`.
 
 Headless equivalent (uses the local heuristic, no API key):
 

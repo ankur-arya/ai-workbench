@@ -1,24 +1,34 @@
 const STEPS = [
   ["experiment", "01", "Experiment"],
   ["dataset", "02", "Dataset"],
-  ["train", "03", "Train"],
-  ["evaluate", "04", "Evaluate"],
-  ["promote", "05", "Promote"],
-  ["production", "06", "Production"],
+  ["model", "03", "Model"],
+  ["train", "04", "Train"],
+  ["evaluate", "05", "Evaluate"],
+  ["promote", "06", "Promote"],
+  ["production", "07", "Production"],
 ];
 
 const state = {
   experimentName: localStorage.getItem("wb.experimentName") || "sentiment-workbench",
   experimentId: localStorage.getItem("wb.experimentId") || "",
   datasetId: localStorage.getItem("wb.datasetId") || "",
+  configId: localStorage.getItem("wb.configId") || "",
   lastRunId: localStorage.getItem("wb.lastRunId") || "",
   modelName: localStorage.getItem("wb.modelName") || "sentiment-classifier",
+};
+
+const promptLibrary = {
+  concise:
+    "You are a text classifier. Classify the user text into exactly one label: {labels}. Reply with only the label, lowercase, no punctuation or explanation.",
+  "few-shot":
+    'You are a text classifier. Choose exactly one label from: {labels}.\nExamples:\n- "I am so happy with this" -> positive\n- "This is terrible and I hate it" -> negative\n- "The meeting is at 3pm" -> neutral\nReply with only the label.',
 };
 
 function persist() {
   localStorage.setItem("wb.experimentName", state.experimentName);
   localStorage.setItem("wb.experimentId", state.experimentId);
   localStorage.setItem("wb.datasetId", state.datasetId);
+  localStorage.setItem("wb.configId", state.configId);
   localStorage.setItem("wb.lastRunId", state.lastRunId);
   localStorage.setItem("wb.modelName", state.modelName);
 }
@@ -63,6 +73,7 @@ function renderSteps() {
     const ready =
       (id === "experiment" && state.experimentId) ||
       (id === "dataset" && state.datasetId) ||
+      (id === "model" && state.configId) ||
       (id === "train" && state.lastRunId) ||
       (id === "evaluate" && state.experimentId) ||
       (id === "promote" && state.lastRunId) ||
@@ -166,6 +177,23 @@ function renderDataset(summary, { highlight = false } = {}) {
     .join("");
 }
 
+async function uploadCsv(file) {
+  setHint("dataset-msg", `Uploading ${file.name}…`);
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch("/api/datasets/upload", { method: "POST", body: form });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(formatDetail(payload.detail) || response.statusText || "Upload failed");
+    }
+    renderDataset(payload, { highlight: true });
+    setHint("dataset-msg", `Loaded ${payload.dataset_id} · ${payload.n_train} train / ${payload.n_test} test`);
+  } catch (err) {
+    setHint("dataset-msg", err.message || String(err), true);
+  }
+}
+
 async function loadDataset(mode, datasetId) {
   const bundled = document.getElementById("load-bundled");
   const generated = document.getElementById("load-generated");
@@ -198,23 +226,94 @@ document.getElementById("load-bundled").addEventListener("click", () => loadData
 document.getElementById("load-generated").addEventListener("click", () =>
   loadDataset("generated", "sentiment-generated")
 );
+document.getElementById("csv-file").addEventListener("change", async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (file) await uploadCsv(file);
+  event.target.value = "";
+});
+
+function applyPromptVariant() {
+  const variant = document.getElementById("model-variant").value;
+  const box = document.getElementById("model-prompt");
+  if (variant !== "custom" && promptLibrary[variant]) {
+    box.value = promptLibrary[variant];
+  }
+}
+
+function renderSavedConfig(config) {
+  if (!config) {
+    document.getElementById("model-summary").innerHTML = "<p>No model config saved yet.</p>";
+    document.getElementById("train-config").innerHTML =
+      "<p>Save a prompt + LLM on the Model step first. Train will evaluate that definition.</p>";
+    return;
+  }
+  state.configId = config.config_id;
+  persist();
+  renderSteps();
+  const summary = `<p><strong>${config.name}</strong> · <span class="metric">${config.llm}</span> · ${config.prompt_variant} · temp ${config.temperature}</p>
+    <pre class="hint">${config.prompt_template}</pre>`;
+  document.getElementById("model-summary").innerHTML = summary;
+  document.getElementById("train-config").innerHTML = `${summary}<p class="hint">Train uses this config unless you override a field below.</p>`;
+}
+
+async function refreshConfigs() {
+  const data = await api("/api/classifier-configs");
+  Object.assign(promptLibrary, data.prompt_templates || {});
+  const current = data.configs.find((item) => item.config_id === state.configId) || data.configs[0];
+  if (current) renderSavedConfig(current);
+  if (!document.getElementById("model-prompt").value) {
+    applyPromptVariant();
+  }
+}
+
+document.getElementById("model-variant").addEventListener("change", applyPromptVariant);
+document.getElementById("model-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const btn = document.getElementById("model-save");
+  btn.disabled = true;
+  setHint("model-msg", "Saving model config…");
+  try {
+    const config = await api("/api/classifier-configs", {
+      method: "POST",
+      body: JSON.stringify({
+        name: document.getElementById("model-name").value.trim(),
+        llm: document.getElementById("model-llm").value,
+        prompt_variant: document.getElementById("model-variant").value,
+        prompt_template: document.getElementById("model-prompt").value,
+        temperature: Number(document.getElementById("model-temp").value || 0),
+        config_id: state.configId || undefined,
+      }),
+    });
+    renderSavedConfig(config);
+    setHint("model-msg", `Saved ${config.config_id} · ${config.llm}`);
+  } catch (err) {
+    setHint("model-msg", err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 document.getElementById("train-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!state.experimentName) return setHint("train-msg", "Create an experiment first.", true);
   if (!state.datasetId) return setHint("train-msg", "Load a dataset first.", true);
+  if (!state.configId && !document.getElementById("train-model").value) {
+    return setHint("train-msg", "Save a model config first (or pick an override LLM).", true);
+  }
   const btn = document.getElementById("train-btn");
   btn.disabled = true;
   setHint("train-msg", "Running evaluation and logging to MLflow…");
+  const overrideTemp = document.getElementById("train-temp").value;
   try {
     const result = await api("/api/runs/train", {
       method: "POST",
       body: JSON.stringify({
         experiment_name: state.experimentName,
         dataset_id: state.datasetId,
-        model: document.getElementById("train-model").value,
-        prompt_variant: document.getElementById("train-prompt").value,
-        temperature: Number(document.getElementById("train-temp").value),
+        config_id: state.configId || null,
+        model: document.getElementById("train-model").value || null,
+        prompt_variant: document.getElementById("train-prompt").value || null,
+        temperature: overrideTemp === "" ? null : Number(overrideTemp),
       }),
     });
     state.lastRunId = result.run_id;
@@ -360,6 +459,7 @@ async function boot() {
         );
       }
     }
+    await refreshConfigs();
     if (state.experimentId) await refreshRuns();
     await refreshRegistry();
   } catch (err) {
